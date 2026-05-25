@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["ES2017"],
+    "typeRoots": ["./node_modules/@types", "./node_modules/@figma"],
+    "strict": true,
+    "module": "CommonJS",
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"]
+}
