@@ -2,22 +2,25 @@
 
 figma.showUI(__html__, {
   width: 420,
-  height: 420,
+  height: 480,
 });
 
 type ContentMap = Record<string, string>;
 
-type PluginMessage = {
-  type: 'APPLY_CONTENT';
-  payload: ContentMap;
-};
+type PluginMessage =
+  | { type: 'APPLY_CONTENT'; payload: ContentMap }
+  | { type: 'RENAME_LAYERS'; payload: ContentMap };
 
 figma.ui.onmessage = async (message: PluginMessage) => {
-  if (message.type !== 'APPLY_CONTENT') {
+  let result: string;
+
+  if (message.type === 'APPLY_CONTENT') {
+    result = await applyContentToTextLayers(message.payload);
+  } else if (message.type === 'RENAME_LAYERS') {
+    result = renameLayersFromContentMap(message.payload);
+  } else {
     return;
   }
-
-  const result = await applyContentToTextLayers(message.payload);
 
   figma.ui.postMessage({
     type: 'RESULT',
@@ -59,10 +62,47 @@ async function applyContentToTextLayers(contentMap: ContentMap): Promise<string>
     .map(([key]) => key)
     .filter((key) => !updatedLayerNames.includes(key) && !failedLayerNames.includes(key));
 
-  return createResultMessage({
+  return createApplyResultMessage({
     updatedLayerNames,
     failedLayerNames,
     unmatchedKeys,
+  });
+}
+
+function renameLayersFromContentMap(contentMap: ContentMap): string {
+  const entries = Object.entries(contentMap);
+
+  if (entries.length === 0) {
+    return '적용할 데이터가 없습니다.';
+  }
+
+  const renamedKeys: string[] = [];
+  const unmatchedKeys: string[] = [];
+  const ambiguousKeys: string[] = [];
+
+  for (const [key, value] of entries) {
+    const matchingNodes = figma.currentPage.findAll((node) => {
+      return node.type === 'TEXT' && node.characters === value;
+    }) as TextNode[];
+
+    if (matchingNodes.length === 0) {
+      unmatchedKeys.push(key);
+      continue;
+    }
+
+    if (matchingNodes.length > 1) {
+      ambiguousKeys.push(key);
+      continue;
+    }
+
+    matchingNodes[0].name = key;
+    renamedKeys.push(key);
+  }
+
+  return createRenameResultMessage({
+    renamedKeys,
+    unmatchedKeys,
+    ambiguousKeys,
   });
 }
 
@@ -93,7 +133,38 @@ function removeDuplicateFonts(fontNames: FontName[]): FontName[] {
   });
 }
 
-function createResultMessage(params: {
+function createRenameResultMessage(params: {
+  renamedKeys: string[];
+  unmatchedKeys: string[];
+  ambiguousKeys: string[];
+}): string {
+  const { renamedKeys, unmatchedKeys, ambiguousKeys } = params;
+
+  const lines = [
+    `이름 변경 완료: ${renamedKeys.length}개`,
+    `매칭 실패 key: ${unmatchedKeys.length}개`,
+    `중복 매칭으로 스킵: ${ambiguousKeys.length}개`,
+  ];
+
+  if (renamedKeys.length > 0) {
+    lines.push('', '[이름이 변경된 key]');
+    lines.push(...renamedKeys.map((key) => `- ${key}`));
+  }
+
+  if (unmatchedKeys.length > 0) {
+    lines.push('', '[텍스트와 일치하는 레이어 없음]');
+    lines.push(...unmatchedKeys.map((key) => `- ${key}`));
+  }
+
+  if (ambiguousKeys.length > 0) {
+    lines.push('', '[중복 매칭으로 스킵한 key]');
+    lines.push(...ambiguousKeys.map((key) => `- ${key}`));
+  }
+
+  return lines.join('\n');
+}
+
+function createApplyResultMessage(params: {
   updatedLayerNames: string[];
   failedLayerNames: string[];
   unmatchedKeys: string[];

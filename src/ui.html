@@ -15,7 +15,7 @@
 
       textarea {
         width: 100%;
-        height: 260px;
+        height: 240px;
         box-sizing: border-box;
         padding: 8px;
         font-family: monospace;
@@ -25,18 +25,30 @@
 
       button {
         width: 100%;
-        margin-top: 12px;
+        margin-top: 8px;
         padding: 10px 12px;
         border: none;
         border-radius: 6px;
-        background: #18a0fb;
-        color: white;
         font-weight: 600;
         cursor: pointer;
       }
 
-      button:hover {
+      button.primary {
+        background: #18a0fb;
+        color: white;
+      }
+
+      button.primary:hover {
         background: #0d8de3;
+      }
+
+      button.secondary {
+        background: #f0f0f0;
+        color: #333;
+      }
+
+      button.secondary:hover {
+        background: #e4e4e4;
       }
 
       .description {
@@ -67,7 +79,9 @@
     <h2>Content Injector</h2>
 
     <p class="description">
-      JSON key와 같은 이름의 Figma Text Layer를 찾아 내용을 채웁니다.
+      JSON key-value를 입력합니다.<br />
+      <strong>Apply</strong>: 레이어 이름(key)과 일치하는 Text Layer에 value를 채웁니다.<br />
+      <strong>텍스트로 이름 지정</strong>: 레이어 텍스트(value)와 일치하는 Text Layer의 이름을 key로 바꿉니다.
     </p>
 
     <textarea id="jsonInput" placeholder='{
@@ -75,49 +89,67 @@
   "profile.headline": "복잡한 도메인을 사용자 흐름으로 바꾸는 프론트엔드 개발자"
 }'></textarea>
 
-    <button id="applyButton">Apply to Figma</button>
+    <button id="applyButton" class="primary">Apply to Figma</button>
+    <button id="renameButton" class="secondary">텍스트로 이름 지정</button>
 
     <div id="errorMessage" class="error"></div>
     <div id="resultMessage" class="result"></div>
 
     <script>
       const textarea = document.getElementById('jsonInput');
-      const button = document.getElementById('applyButton');
+      const applyButton = document.getElementById('applyButton');
+      const renameButton = document.getElementById('renameButton');
       const errorMessage = document.getElementById('errorMessage');
       const resultMessage = document.getElementById('resultMessage');
 
-      button.onclick = () => {
+      function clearMessages() {
         errorMessage.textContent = '';
         resultMessage.textContent = '';
+      }
+
+      function parseContentMap(rawValue) {
+        const contentMap = JSON.parse(rawValue);
+
+        if (typeof contentMap !== 'object' || contentMap === null || Array.isArray(contentMap)) {
+          return { error: 'JSON은 key-value 객체여야 합니다.' };
+        }
+
+        for (const value of Object.values(contentMap)) {
+          if (typeof value !== 'string') {
+            return { error: '모든 값은 문자열이어야 합니다.' };
+          }
+        }
+
+        return { contentMap };
+      }
+
+      function sendPluginMessage(type) {
+        clearMessages();
 
         try {
-          const contentMap = JSON.parse(textarea.value);
+          const parsed = parseContentMap(textarea.value);
 
-          if (typeof contentMap !== 'object' || contentMap === null || Array.isArray(contentMap)) {
-            errorMessage.textContent = 'JSON은 key-value 객체여야 합니다.';
+          if (parsed.error) {
+            errorMessage.textContent = parsed.error;
             return;
-          }
-
-          for (const value of Object.values(contentMap)) {
-            if (typeof value !== 'string') {
-              errorMessage.textContent = '모든 값은 문자열이어야 합니다.';
-              return;
-            }
           }
 
           parent.postMessage(
             {
               pluginMessage: {
-                type: 'APPLY_CONTENT',
-                payload: contentMap
-              }
+                type,
+                payload: parsed.contentMap,
+              },
             },
             '*'
           );
         } catch (error) {
           errorMessage.textContent = 'JSON 형식이 올바르지 않습니다.';
         }
-      };
+      }
+
+      applyButton.onclick = () => sendPluginMessage('APPLY_CONTENT');
+      renameButton.onclick = () => sendPluginMessage('RENAME_LAYERS');
 
       window.onmessage = (event) => {
         const message = event.data.pluginMessage;
