@@ -9,9 +9,20 @@ type ContentMap = Record<string, string>;
 
 type PluginMessage =
   | { type: 'APPLY_CONTENT'; payload: ContentMap }
-  | { type: 'RENAME_LAYERS'; payload: ContentMap };
+  | { type: 'RENAME_LAYERS'; payload: ContentMap }
+  | { type: 'EXTRACT_CONTENT'; payload: ContentMap };
 
 figma.ui.onmessage = async (message: PluginMessage) => {
+  if (message.type === 'EXTRACT_CONTENT') {
+    const { contentMap, summary } = extractContentFromTextLayers(message.payload);
+
+    figma.ui.postMessage({
+      type: 'EXTRACT_RESULT',
+      payload: { contentMap, summary },
+    });
+    return;
+  }
+
   let result: string;
 
   if (message.type === 'APPLY_CONTENT') {
@@ -67,6 +78,57 @@ async function applyContentToTextLayers(contentMap: ContentMap): Promise<string>
     failedLayerNames,
     unmatchedKeys,
   });
+}
+
+function extractContentFromTextLayers(contentMap: ContentMap): {
+  contentMap: ContentMap;
+  summary: string;
+} {
+  const keys = Object.keys(contentMap);
+
+  if (keys.length === 0) {
+    return {
+      contentMap: {},
+      summary: '추출할 key가 없습니다. JSON에 key를 입력해 주세요.',
+    };
+  }
+
+  const extractedContentMap: ContentMap = {};
+  const extractedKeys: string[] = [];
+  const unmatchedKeys: string[] = [];
+  const ambiguousKeys: string[] = [];
+
+  for (const key of keys) {
+    const matchingNodes = figma.currentPage.findAll((node) => {
+      return node.type === 'TEXT' && node.name === key;
+    }) as TextNode[];
+
+    if (matchingNodes.length === 0) {
+      unmatchedKeys.push(key);
+      extractedContentMap[key] = contentMap[key];
+      continue;
+    }
+
+    const uniqueTexts = [...new Set(matchingNodes.map((node) => node.characters))];
+
+    if (uniqueTexts.length > 1) {
+      ambiguousKeys.push(key);
+      extractedContentMap[key] = contentMap[key];
+      continue;
+    }
+
+    extractedContentMap[key] = uniqueTexts[0];
+    extractedKeys.push(key);
+  }
+
+  return {
+    contentMap: extractedContentMap,
+    summary: createExtractResultMessage({
+      extractedKeys,
+      unmatchedKeys,
+      ambiguousKeys,
+    }),
+  };
 }
 
 function renameLayersFromContentMap(contentMap: ContentMap): string {
@@ -131,6 +193,37 @@ function removeDuplicateFonts(fontNames: FontName[]): FontName[] {
     fontKeySet.add(key);
     return true;
   });
+}
+
+function createExtractResultMessage(params: {
+  extractedKeys: string[];
+  unmatchedKeys: string[];
+  ambiguousKeys: string[];
+}): string {
+  const { extractedKeys, unmatchedKeys, ambiguousKeys } = params;
+
+  const lines = [
+    `추출 완료: ${extractedKeys.length}개`,
+    `매칭 실패 key: ${unmatchedKeys.length}개`,
+    `중복·불일치로 스킵: ${ambiguousKeys.length}개`,
+  ];
+
+  if (extractedKeys.length > 0) {
+    lines.push('', '[추출된 key]');
+    lines.push(...extractedKeys.map((key) => `- ${key}`));
+  }
+
+  if (unmatchedKeys.length > 0) {
+    lines.push('', '[Figma에서 찾지 못한 key]');
+    lines.push(...unmatchedKeys.map((key) => `- ${key}`));
+  }
+
+  if (ambiguousKeys.length > 0) {
+    lines.push('', '[동일 이름·서로 다른 텍스트로 스킵한 key]');
+    lines.push(...ambiguousKeys.map((key) => `- ${key}`));
+  }
+
+  return lines.join('\n');
 }
 
 function createRenameResultMessage(params: {

@@ -81,7 +81,8 @@
     <p class="description">
       JSON key-value를 입력합니다.<br />
       <strong>Apply</strong>: 레이어 이름(key)과 일치하는 Text Layer에 value를 채웁니다.<br />
-      <strong>텍스트로 이름 지정</strong>: 레이어 텍스트(value)와 일치하는 Text Layer의 이름을 key로 바꿉니다.
+      <strong>텍스트로 이름 지정</strong>: 레이어 텍스트(value)와 일치하는 Text Layer의 이름을 key로 바꿉니다.<br />
+      <strong>텍스트 추출</strong>: JSON key에 해당하는 Text Layer 내용을 읽어 textarea에 반영합니다.
     </p>
 
     <textarea id="jsonInput" placeholder='{
@@ -90,6 +91,7 @@
 }'></textarea>
 
     <button id="applyButton" class="primary">Apply to Figma</button>
+    <button id="extractButton" class="secondary">텍스트 추출</button>
     <button id="renameButton" class="secondary">텍스트로 이름 지정</button>
 
     <div id="errorMessage" class="error"></div>
@@ -98,6 +100,7 @@
     <script>
       const textarea = document.getElementById('jsonInput');
       const applyButton = document.getElementById('applyButton');
+      const extractButton = document.getElementById('extractButton');
       const renameButton = document.getElementById('renameButton');
       const errorMessage = document.getElementById('errorMessage');
       const resultMessage = document.getElementById('resultMessage');
@@ -149,6 +152,7 @@
       }
 
       applyButton.onclick = () => sendPluginMessage('APPLY_CONTENT');
+      extractButton.onclick = () => sendPluginMessage('EXTRACT_CONTENT');
       renameButton.onclick = () => sendPluginMessage('RENAME_LAYERS');
 
       window.onmessage = (event) => {
@@ -160,6 +164,11 @@
 
         if (message.type === 'RESULT') {
           resultMessage.textContent = message.payload;
+        }
+
+        if (message.type === 'EXTRACT_RESULT') {
+          textarea.value = JSON.stringify(message.payload.contentMap, null, 2);
+          resultMessage.textContent = message.payload.summary;
         }
       };
     </script>
